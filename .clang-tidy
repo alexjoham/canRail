@@ -1,0 +1,6 @@
+Checks: >
+  -*,
+  misc-include-cleaner,
+  readability-make-member-function-const
+WarningsAsErrors: '*'
+HeaderFilterRegex: '(^|/)(src|test|include)/'
