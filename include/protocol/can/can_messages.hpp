@@ -61,6 +61,16 @@ struct SystemTrackProtocolActivate {
     std::uint8_t protocolMask;
 };
 
+struct SystemMfxNewRegistrationCounter {
+    std::uint32_t deviceUid;
+    std::uint16_t counter;
+};
+
+struct SystemOverload {
+    std::uint32_t deviceUid;
+    std::uint8_t channel;
+};
+
 struct UnknownCanMessage {
     CanCommand command;
     std::uint8_t length;

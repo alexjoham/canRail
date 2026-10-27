@@ -16,6 +16,8 @@ constexpr std::uint8_t SystemCommandLength = 5;
 constexpr std::uint8_t SystemTrainDataProtocolLength = 6;
 constexpr std::uint8_t SystemSwitchingTimeLength = 7;
 constexpr std::uint8_t SystemTrackProtocolActivateLength = 6;
+constexpr std::uint8_t SystemMfxNewRegistrationCounterLength = 7;
+constexpr std::uint8_t SystemOverloadLength = 6;
 constexpr std::uint8_t TrainFunctionQueryLength = 5;
 
 Result<CanMessage> decodeTrainSpeed(const CanId &id, const CanFrame &frame) {
@@ -111,6 +113,10 @@ Result<CanMessage> decodeSystemCommand(const CanId &id, const CanFrame &frame) {
             return SystemTrainDataProtocolLength;
         case SystemSubcommand::SwitchingTime:
             return SystemSwitchingTimeLength;
+        case SystemSubcommand::MfxNew:
+            return SystemMfxNewRegistrationCounterLength;
+        case SystemSubcommand::Overthrottle:
+            return SystemOverloadLength;
         default:
             return SystemCommandLength;
         }
@@ -161,6 +167,22 @@ Result<CanMessage> decodeSystemCommand(const CanId &id, const CanFrame &frame) {
         }
         return Result<CanMessage>::success(
             CanMessage{id, SystemTrackProtocolActivate{deviceUid.value(), protocolMask.value()}});
+    }
+    case SystemSubcommand::MfxNew: {
+        const auto counter = reader.readU16BigEndian();
+        if (!counter) {
+            return Result<CanMessage>::failure(ProtocolError::BufferTooShort);
+        }
+        return Result<CanMessage>::success(
+            CanMessage{id, SystemMfxNewRegistrationCounter{deviceUid.value(), counter.value()}});
+    }
+    case SystemSubcommand::Overthrottle: {
+        const auto channel = reader.readU8();
+        if (!channel) {
+            return Result<CanMessage>::failure(ProtocolError::BufferTooShort);
+        }
+        return Result<CanMessage>::success(
+            CanMessage{id, SystemOverload{deviceUid.value(), channel.value()}});
     }
     default:
         return Result<CanMessage>::failure(ProtocolError::InvalidEnumValue);
@@ -257,6 +279,30 @@ Result<CanFrame> CanCodec::encode(const CanMessage &message) {
                 !writer.writeU8(
                     static_cast<std::uint8_t>(SystemSubcommand::TrackProtocolActivate)) ||
                 !writer.writeU8(activate->protocolMask)) {
+                return Result<CanFrame>::failure(ProtocolError::BufferFull);
+            }
+            return Result<CanFrame>::success(frame);
+        }
+        if (const auto *counter = std::get_if<SystemMfxNewRegistrationCounter>(&message.payload)) {
+            CanFrame frame;
+            frame.identifier = message.id.encode();
+            frame.length = SystemMfxNewRegistrationCounterLength;
+            ::can_rail::protocol::ByteWriter writer(frame.data.data(), frame.data.size());
+            if (!writer.writeU32BigEndian(counter->deviceUid) ||
+                !writer.writeU8(static_cast<std::uint8_t>(SystemSubcommand::MfxNew)) ||
+                !writer.writeU16BigEndian(counter->counter)) {
+                return Result<CanFrame>::failure(ProtocolError::BufferFull);
+            }
+            return Result<CanFrame>::success(frame);
+        }
+        if (const auto *overload = std::get_if<SystemOverload>(&message.payload)) {
+            CanFrame frame;
+            frame.identifier = message.id.encode();
+            frame.length = SystemOverloadLength;
+            ::can_rail::protocol::ByteWriter writer(frame.data.data(), frame.data.size());
+            if (!writer.writeU32BigEndian(overload->deviceUid) ||
+                !writer.writeU8(static_cast<std::uint8_t>(SystemSubcommand::Overthrottle)) ||
+                !writer.writeU8(overload->channel)) {
                 return Result<CanFrame>::failure(ProtocolError::BufferFull);
             }
             return Result<CanFrame>::success(frame);
