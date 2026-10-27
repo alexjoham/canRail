@@ -118,6 +118,11 @@ Result<CanMessage> decodeSystemCommand(const CanId &id, const CanFrame &frame) {
         return Result<CanMessage>::success(CanMessage{id, SystemGo{deviceUid.value()}});
     case SystemSubcommand::Halt:
         return Result<CanMessage>::success(CanMessage{id, SystemHalt{deviceUid.value()}});
+    case SystemSubcommand::TrainEmergencyHalt:
+        return Result<CanMessage>::success(
+            CanMessage{id, SystemTrainEmergencyHalt{deviceUid.value()}});
+    case SystemSubcommand::TrainCycleStop:
+        return Result<CanMessage>::success(CanMessage{id, SystemTrainCycleStop{deviceUid.value()}});
     default:
         return Result<CanMessage>::failure(ProtocolError::InvalidEnumValue);
     }
@@ -152,12 +157,12 @@ Result<CanMessage> CanCodec::decode(const CanFrame &frame) {
 }
 
 Result<CanFrame> CanCodec::encode(const CanMessage &message) {
-    const auto encodeSystem = [&message](auto payload, SystemSubcommand subcommand) {
+    const auto encodeSystem = [&message](std::uint32_t uid, SystemSubcommand subcommand) {
         CanFrame frame;
         frame.identifier = message.id.encode();
         frame.length = SystemCommandLength;
         ::can_rail::protocol::ByteWriter writer(frame.data.data(), frame.data.size());
-        if (!writer.writeU32BigEndian(payload.deviceUid) ||
+        if (!writer.writeU32BigEndian(uid) ||
             !writer.writeU8(static_cast<std::uint8_t>(subcommand))) {
             return Result<CanFrame>::failure(ProtocolError::BufferFull);
         }
@@ -166,13 +171,19 @@ Result<CanFrame> CanCodec::encode(const CanMessage &message) {
 
     if (message.id.command == CanCommand::System) {
         if (const auto *stop = std::get_if<SystemStop>(&message.payload)) {
-            return encodeSystem(*stop, SystemSubcommand::Stop);
+            return encodeSystem(stop->deviceUid, SystemSubcommand::Stop);
         }
         if (const auto *go = std::get_if<SystemGo>(&message.payload)) {
-            return encodeSystem(*go, SystemSubcommand::Go);
+            return encodeSystem(go->deviceUid, SystemSubcommand::Go);
         }
         if (const auto *halt = std::get_if<SystemHalt>(&message.payload)) {
-            return encodeSystem(*halt, SystemSubcommand::Halt);
+            return encodeSystem(halt->deviceUid, SystemSubcommand::Halt);
+        }
+        if (const auto *emergencyHalt = std::get_if<SystemTrainEmergencyHalt>(&message.payload)) {
+            return encodeSystem(emergencyHalt->locomotiveUid, SystemSubcommand::TrainEmergencyHalt);
+        }
+        if (const auto *cycleStop = std::get_if<SystemTrainCycleStop>(&message.payload)) {
+            return encodeSystem(cycleStop->locomotiveUid, SystemSubcommand::TrainCycleStop);
         }
         return Result<CanFrame>::failure(ProtocolError::UnsupportedCommand);
     }

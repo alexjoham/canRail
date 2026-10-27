@@ -8,8 +8,9 @@
 
 namespace can_rail::protocol::can {
 
-using CanPayload = std::variant<TrainSpeed, TrainDirection, TrainFunction, SystemStop, SystemGo,
-                                SystemHalt, UnknownCanMessage>;
+using CanPayload =
+    std::variant<TrainSpeed, TrainDirection, TrainFunction, SystemStop, SystemGo, SystemHalt,
+                 SystemTrainEmergencyHalt, SystemTrainCycleStop, UnknownCanMessage>;
 
 struct CanMessage {
     CanId id;

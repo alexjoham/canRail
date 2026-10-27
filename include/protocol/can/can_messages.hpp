@@ -38,6 +38,14 @@ struct SystemHalt {
     std::uint32_t deviceUid;
 };
 
+struct SystemTrainEmergencyHalt {
+    std::uint32_t locomotiveUid;
+};
+
+struct SystemTrainCycleStop {
+    std::uint32_t locomotiveUid;
+};
+
 struct UnknownCanMessage {
     CanCommand command;
     std::uint8_t length;
