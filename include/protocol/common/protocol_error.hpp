@@ -9,6 +9,7 @@ enum class ProtocolError {
     InvalidCanIdentifier,
     InvalidDataLength,
     InvalidEnumValue,
+    UnsupportedCommand,
 };
 
 } // namespace can_rail::protocol
