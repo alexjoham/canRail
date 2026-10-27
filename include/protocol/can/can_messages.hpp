@@ -12,18 +12,18 @@ namespace can_rail::protocol::can {
 
 struct TrainSpeed {
     std::uint32_t locomotiveUid;
-    std::uint16_t speed;
+    std::optional<std::uint16_t> speed;
 };
 
 struct TrainDirection {
     std::uint32_t locomotiveUid;
-    Direction direction;
+    std::optional<Direction> direction;
 };
 
 struct TrainFunction {
     std::uint32_t locomotiveUid;
     std::uint8_t functionNumber;
-    std::uint8_t value;
+    std::optional<std::uint8_t> value;
 };
 
 struct SystemStop {

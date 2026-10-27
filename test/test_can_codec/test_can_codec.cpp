@@ -27,18 +27,19 @@ void test_train_speed_decodes_protocol_frame() {
     TEST_ASSERT_TRUE(std::holds_alternative<TrainSpeed>(decoded.value().payload));
     const auto &speed = std::get<TrainSpeed>(decoded.value().payload);
     TEST_ASSERT_EQUAL_UINT32(1, speed.locomotiveUid);
-    TEST_ASSERT_EQUAL_UINT16(0x0320, speed.speed);
+    TEST_ASSERT_TRUE(speed.speed.has_value());
+    TEST_ASSERT_EQUAL_UINT16(0x0320, *speed.speed);
 }
 
-void test_train_speed_rejects_query_length() {
+void test_train_speed_decodes_query_length() {
     const CanId id{0, CanCommand::TrainSpeed, false, 0x0300};
     CanFrame frame{.identifier = id.encode(), .length = 4};
 
     const auto decoded = CanCodec::decode(frame);
 
-    TEST_ASSERT_FALSE(decoded);
-    TEST_ASSERT_EQUAL(static_cast<int>(ProtocolError::InvalidDataLength),
-                      static_cast<int>(decoded.error()));
+    TEST_ASSERT_TRUE(decoded);
+    const auto &speed = std::get<TrainSpeed>(decoded.value().payload);
+    TEST_ASSERT_FALSE(speed.speed.has_value());
 }
 
 void test_train_speed_rejects_unsupported_command() {
@@ -71,11 +72,24 @@ void test_train_speed_encodes_protocol_frame() {
     TEST_ASSERT_EQUAL_UINT8(0x20, encoded.value().data[5]);
 }
 
+void test_train_speed_encodes_query_frame() {
+    const CanMessage message{
+        .id = {0, CanCommand::TrainSpeed, false, 0x0300},
+        .payload = TrainSpeed{1, {}},
+    };
+
+    const auto encoded = CanCodec::encode(message);
+
+    TEST_ASSERT_TRUE(encoded);
+    TEST_ASSERT_EQUAL_UINT8(4, encoded.value().length);
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_train_speed_decodes_protocol_frame);
-    RUN_TEST(test_train_speed_rejects_query_length);
+    RUN_TEST(test_train_speed_decodes_query_length);
     RUN_TEST(test_train_speed_rejects_unsupported_command);
     RUN_TEST(test_train_speed_encodes_protocol_frame);
+    RUN_TEST(test_train_speed_encodes_query_frame);
     return UNITY_END();
 }

@@ -58,7 +58,8 @@ void test_can_message_contains_identifier_and_payload() {
     TEST_ASSERT_EQUAL_UINT16(0x1234, message.id.hash);
     TEST_ASSERT_TRUE(std::holds_alternative<TrainSpeed>(message.payload));
     TEST_ASSERT_EQUAL_UINT32(0x12345678, std::get<TrainSpeed>(message.payload).locomotiveUid);
-    TEST_ASSERT_EQUAL_UINT16(500, std::get<TrainSpeed>(message.payload).speed);
+    TEST_ASSERT_TRUE(std::get<TrainSpeed>(message.payload).speed.has_value());
+    TEST_ASSERT_EQUAL_UINT16(500, *std::get<TrainSpeed>(message.payload).speed);
 }
 
 void test_can_payload_can_be_dispatched_with_visit() {

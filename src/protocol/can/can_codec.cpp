@@ -8,18 +8,29 @@ namespace can_rail::protocol::can {
 namespace {
 
 constexpr std::uint8_t TrainSpeedLength = 6;
+constexpr std::uint8_t TrainSpeedQueryLength = 4;
 constexpr std::uint8_t TrainDirectionLength = 5;
+constexpr std::uint8_t TrainDirectionQueryLength = 4;
 constexpr std::uint8_t TrainFunctionLength = 6;
+constexpr std::uint8_t TrainFunctionQueryLength = 5;
 
 Result<CanMessage> decodeTrainSpeed(const CanId &id, const CanFrame &frame) {
-    if (frame.length != TrainSpeedLength) {
+    if (frame.length != TrainSpeedLength && frame.length != TrainSpeedQueryLength) {
         return Result<CanMessage>::failure(ProtocolError::InvalidDataLength);
     }
 
     ::can_rail::protocol::ByteReader reader(frame.data.data(), frame.length);
     const auto locomotiveUid = reader.readU32BigEndian();
+    if (!locomotiveUid) {
+        return Result<CanMessage>::failure(ProtocolError::BufferTooShort);
+    }
+
+    if (frame.length == TrainSpeedQueryLength) {
+        return Result<CanMessage>::success(CanMessage{id, TrainSpeed{locomotiveUid.value(), {}}});
+    }
+
     const auto speed = reader.readU16BigEndian();
-    if (!locomotiveUid || !speed) {
+    if (!speed) {
         return Result<CanMessage>::failure(ProtocolError::BufferTooShort);
     }
 
@@ -28,14 +39,23 @@ Result<CanMessage> decodeTrainSpeed(const CanId &id, const CanFrame &frame) {
 }
 
 Result<CanMessage> decodeTrainDirection(const CanId &id, const CanFrame &frame) {
-    if (frame.length != TrainDirectionLength) {
+    if (frame.length != TrainDirectionLength && frame.length != TrainDirectionQueryLength) {
         return Result<CanMessage>::failure(ProtocolError::InvalidDataLength);
     }
 
     ::can_rail::protocol::ByteReader reader(frame.data.data(), frame.length);
     const auto locomotiveUid = reader.readU32BigEndian();
+    if (!locomotiveUid) {
+        return Result<CanMessage>::failure(ProtocolError::BufferTooShort);
+    }
+
+    if (frame.length == TrainDirectionQueryLength) {
+        return Result<CanMessage>::success(
+            CanMessage{id, TrainDirection{locomotiveUid.value(), {}}});
+    }
+
     const auto direction = reader.readU8();
-    if (!locomotiveUid || !direction) {
+    if (!direction) {
         return Result<CanMessage>::failure(ProtocolError::BufferTooShort);
     }
     if (direction.value() > static_cast<std::uint8_t>(Direction::Change)) {
@@ -47,18 +67,30 @@ Result<CanMessage> decodeTrainDirection(const CanId &id, const CanFrame &frame) 
 }
 
 Result<CanMessage> decodeTrainFunction(const CanId &id, const CanFrame &frame) {
-    if (frame.length != TrainFunctionLength) {
+    if (frame.length != TrainFunctionLength && frame.length != TrainFunctionQueryLength) {
         return Result<CanMessage>::failure(ProtocolError::InvalidDataLength);
     }
 
     ::can_rail::protocol::ByteReader reader(frame.data.data(), frame.length);
     const auto locomotiveUid = reader.readU32BigEndian();
     const auto functionNumber = reader.readU8();
-    const auto value = reader.readU8();
-    if (!locomotiveUid || !functionNumber || !value) {
+    if (!locomotiveUid || !functionNumber) {
         return Result<CanMessage>::failure(ProtocolError::BufferTooShort);
     }
-    if (functionNumber.value() > 31 || value.value() > 31) {
+    if (functionNumber.value() > 31) {
+        return Result<CanMessage>::failure(ProtocolError::InvalidEnumValue);
+    }
+
+    if (frame.length == TrainFunctionQueryLength) {
+        return Result<CanMessage>::success(
+            CanMessage{id, TrainFunction{locomotiveUid.value(), functionNumber.value(), {}}});
+    }
+
+    const auto value = reader.readU8();
+    if (!value) {
+        return Result<CanMessage>::failure(ProtocolError::BufferTooShort);
+    }
+    if (value.value() > 31) {
         return Result<CanMessage>::failure(ProtocolError::InvalidEnumValue);
     }
 
@@ -96,7 +128,18 @@ Result<CanFrame> CanCodec::encode(const CanMessage &message) {
     if (trainSpeed == nullptr || message.id.command != CanCommand::TrainSpeed) {
         const auto *trainDirection = std::get_if<TrainDirection>(&message.payload);
         if (trainDirection != nullptr && message.id.command == CanCommand::TrainDirection) {
-            const auto direction = static_cast<std::uint8_t>(trainDirection->direction);
+            if (!trainDirection->direction.has_value()) {
+                CanFrame frame;
+                frame.identifier = message.id.encode();
+                frame.length = TrainDirectionQueryLength;
+                ::can_rail::protocol::ByteWriter writer(frame.data.data(), frame.data.size());
+                if (!writer.writeU32BigEndian(trainDirection->locomotiveUid)) {
+                    return Result<CanFrame>::failure(ProtocolError::BufferFull);
+                }
+                return Result<CanFrame>::success(frame);
+            }
+
+            const auto direction = static_cast<std::uint8_t>(*trainDirection->direction);
             if (direction > static_cast<std::uint8_t>(Direction::Change)) {
                 return Result<CanFrame>::failure(ProtocolError::InvalidEnumValue);
             }
@@ -114,17 +157,23 @@ Result<CanFrame> CanCodec::encode(const CanMessage &message) {
 
         const auto *trainFunction = std::get_if<TrainFunction>(&message.payload);
         if (trainFunction != nullptr && message.id.command == CanCommand::TrainFunction) {
-            if (trainFunction->functionNumber > 31 || trainFunction->value > 31) {
+            if (trainFunction->functionNumber > 31) {
+                return Result<CanFrame>::failure(ProtocolError::InvalidEnumValue);
+            }
+            if (trainFunction->value.has_value() && *trainFunction->value > 31) {
                 return Result<CanFrame>::failure(ProtocolError::InvalidEnumValue);
             }
 
             CanFrame frame;
             frame.identifier = message.id.encode();
-            frame.length = TrainFunctionLength;
+            frame.length =
+                trainFunction->value.has_value() ? TrainFunctionLength : TrainFunctionQueryLength;
             ::can_rail::protocol::ByteWriter writer(frame.data.data(), frame.data.size());
             if (!writer.writeU32BigEndian(trainFunction->locomotiveUid) ||
-                !writer.writeU8(trainFunction->functionNumber) ||
-                !writer.writeU8(trainFunction->value)) {
+                !writer.writeU8(trainFunction->functionNumber)) {
+                return Result<CanFrame>::failure(ProtocolError::BufferFull);
+            }
+            if (trainFunction->value.has_value() && !writer.writeU8(*trainFunction->value)) {
                 return Result<CanFrame>::failure(ProtocolError::BufferFull);
             }
             return Result<CanFrame>::success(frame);
@@ -135,11 +184,13 @@ Result<CanFrame> CanCodec::encode(const CanMessage &message) {
 
     CanFrame frame;
     frame.identifier = message.id.encode();
-    frame.length = TrainSpeedLength;
+    frame.length = trainSpeed->speed.has_value() ? TrainSpeedLength : TrainSpeedQueryLength;
 
     ::can_rail::protocol::ByteWriter writer(frame.data.data(), frame.data.size());
-    if (!writer.writeU32BigEndian(trainSpeed->locomotiveUid) ||
-        !writer.writeU16BigEndian(trainSpeed->speed)) {
+    if (!writer.writeU32BigEndian(trainSpeed->locomotiveUid)) {
+        return Result<CanFrame>::failure(ProtocolError::BufferFull);
+    }
+    if (trainSpeed->speed.has_value() && !writer.writeU16BigEndian(*trainSpeed->speed)) {
         return Result<CanFrame>::failure(ProtocolError::BufferFull);
     }
 

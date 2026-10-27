@@ -27,8 +27,9 @@ void test_train_direction_decodes_set_frame() {
     TEST_ASSERT_TRUE(decoded);
     const auto &direction = std::get<TrainDirection>(decoded.value().payload);
     TEST_ASSERT_EQUAL_UINT32(1, direction.locomotiveUid);
+    TEST_ASSERT_TRUE(direction.direction.has_value());
     TEST_ASSERT_EQUAL_UINT8(static_cast<std::uint8_t>(Direction::Backward),
-                            static_cast<std::uint8_t>(direction.direction));
+                            static_cast<std::uint8_t>(*direction.direction));
 }
 
 void test_train_direction_encodes_set_frame() {
@@ -46,6 +47,32 @@ void test_train_direction_encodes_set_frame() {
     TEST_ASSERT_EQUAL_UINT8(0x00, encoded.value().data[2]);
     TEST_ASSERT_EQUAL_UINT8(0x01, encoded.value().data[3]);
     TEST_ASSERT_EQUAL_UINT8(0x01, encoded.value().data[4]);
+}
+
+void test_train_direction_decodes_query_frame() {
+    const CanId id{0, CanCommand::TrainDirection, false, 0x0300};
+    const CanFrame frame{
+        .identifier = id.encode(),
+        .length = 4,
+        .data = {0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00},
+    };
+
+    const auto decoded = CanCodec::decode(frame);
+
+    TEST_ASSERT_TRUE(decoded);
+    TEST_ASSERT_FALSE(std::get<TrainDirection>(decoded.value().payload).direction.has_value());
+}
+
+void test_train_direction_encodes_query_frame() {
+    const CanMessage message{
+        .id = {0, CanCommand::TrainDirection, false, 0x0300},
+        .payload = TrainDirection{1, {}},
+    };
+
+    const auto encoded = CanCodec::encode(message);
+
+    TEST_ASSERT_TRUE(encoded);
+    TEST_ASSERT_EQUAL_UINT8(4, encoded.value().length);
 }
 
 void test_train_direction_rejects_invalid_value() {
@@ -77,7 +104,8 @@ void test_train_function_decodes_set_frame() {
     const auto &function = std::get<TrainFunction>(decoded.value().payload);
     TEST_ASSERT_EQUAL_UINT32(1, function.locomotiveUid);
     TEST_ASSERT_EQUAL_UINT8(31, function.functionNumber);
-    TEST_ASSERT_EQUAL_UINT8(31, function.value);
+    TEST_ASSERT_TRUE(function.value.has_value());
+    TEST_ASSERT_EQUAL_UINT8(31, *function.value);
 }
 
 void test_train_function_encodes_set_frame() {
@@ -96,6 +124,32 @@ void test_train_function_encodes_set_frame() {
     TEST_ASSERT_EQUAL_UINT8(0x01, encoded.value().data[3]);
     TEST_ASSERT_EQUAL_UINT8(0x03, encoded.value().data[4]);
     TEST_ASSERT_EQUAL_UINT8(0x01, encoded.value().data[5]);
+}
+
+void test_train_function_decodes_query_frame() {
+    const CanId id{0, CanCommand::TrainFunction, false, 0x0300};
+    const CanFrame frame{
+        .identifier = id.encode(),
+        .length = 5,
+        .data = {0x00, 0x00, 0x00, 0x01, 0x03, 0x00, 0x00, 0x00},
+    };
+
+    const auto decoded = CanCodec::decode(frame);
+
+    TEST_ASSERT_TRUE(decoded);
+    TEST_ASSERT_FALSE(std::get<TrainFunction>(decoded.value().payload).value.has_value());
+}
+
+void test_train_function_encodes_query_frame() {
+    const CanMessage message{
+        .id = {0, CanCommand::TrainFunction, false, 0x0300},
+        .payload = TrainFunction{1, 3, {}},
+    };
+
+    const auto encoded = CanCodec::encode(message);
+
+    TEST_ASSERT_TRUE(encoded);
+    TEST_ASSERT_EQUAL_UINT8(5, encoded.value().length);
 }
 
 void test_train_function_rejects_out_of_range_value() {
@@ -117,9 +171,13 @@ int main() {
     UNITY_BEGIN();
     RUN_TEST(test_train_direction_decodes_set_frame);
     RUN_TEST(test_train_direction_encodes_set_frame);
+    RUN_TEST(test_train_direction_decodes_query_frame);
+    RUN_TEST(test_train_direction_encodes_query_frame);
     RUN_TEST(test_train_direction_rejects_invalid_value);
     RUN_TEST(test_train_function_decodes_set_frame);
     RUN_TEST(test_train_function_encodes_set_frame);
+    RUN_TEST(test_train_function_decodes_query_frame);
+    RUN_TEST(test_train_function_encodes_query_frame);
     RUN_TEST(test_train_function_rejects_out_of_range_value);
     return UNITY_END();
 }
