@@ -12,6 +12,7 @@ constexpr std::uint8_t TrainSpeedQueryLength = 4;
 constexpr std::uint8_t TrainDirectionLength = 5;
 constexpr std::uint8_t TrainDirectionQueryLength = 4;
 constexpr std::uint8_t TrainFunctionLength = 6;
+constexpr std::uint8_t SystemCommandLength = 5;
 constexpr std::uint8_t TrainFunctionQueryLength = 5;
 
 Result<CanMessage> decodeTrainSpeed(const CanId &id, const CanFrame &frame) {
@@ -98,6 +99,30 @@ Result<CanMessage> decodeTrainFunction(const CanId &id, const CanFrame &frame) {
         id, TrainFunction{locomotiveUid.value(), functionNumber.value(), value.value()}});
 }
 
+Result<CanMessage> decodeSystemCommand(const CanId &id, const CanFrame &frame) {
+    if (frame.length != SystemCommandLength) {
+        return Result<CanMessage>::failure(ProtocolError::InvalidDataLength);
+    }
+
+    ::can_rail::protocol::ByteReader reader(frame.data.data(), frame.length);
+    const auto deviceUid = reader.readU32BigEndian();
+    const auto subcommand = reader.readU8();
+    if (!deviceUid || !subcommand) {
+        return Result<CanMessage>::failure(ProtocolError::BufferTooShort);
+    }
+
+    switch (static_cast<SystemSubcommand>(subcommand.value())) {
+    case SystemSubcommand::Stop:
+        return Result<CanMessage>::success(CanMessage{id, SystemStop{deviceUid.value()}});
+    case SystemSubcommand::Go:
+        return Result<CanMessage>::success(CanMessage{id, SystemGo{deviceUid.value()}});
+    case SystemSubcommand::Halt:
+        return Result<CanMessage>::success(CanMessage{id, SystemHalt{deviceUid.value()}});
+    default:
+        return Result<CanMessage>::failure(ProtocolError::InvalidEnumValue);
+    }
+}
+
 } // namespace
 
 Result<CanMessage> CanCodec::decode(const CanFrame &frame) {
@@ -119,11 +144,39 @@ Result<CanMessage> CanCodec::decode(const CanFrame &frame) {
     if (id.value().command == CanCommand::TrainFunction) {
         return decodeTrainFunction(id.value(), frame);
     }
+    if (id.value().command == CanCommand::System) {
+        return decodeSystemCommand(id.value(), frame);
+    }
 
     return Result<CanMessage>::failure(ProtocolError::UnsupportedCommand);
 }
 
 Result<CanFrame> CanCodec::encode(const CanMessage &message) {
+    const auto encodeSystem = [&message](auto payload, SystemSubcommand subcommand) {
+        CanFrame frame;
+        frame.identifier = message.id.encode();
+        frame.length = SystemCommandLength;
+        ::can_rail::protocol::ByteWriter writer(frame.data.data(), frame.data.size());
+        if (!writer.writeU32BigEndian(payload.deviceUid) ||
+            !writer.writeU8(static_cast<std::uint8_t>(subcommand))) {
+            return Result<CanFrame>::failure(ProtocolError::BufferFull);
+        }
+        return Result<CanFrame>::success(frame);
+    };
+
+    if (message.id.command == CanCommand::System) {
+        if (const auto *stop = std::get_if<SystemStop>(&message.payload)) {
+            return encodeSystem(*stop, SystemSubcommand::Stop);
+        }
+        if (const auto *go = std::get_if<SystemGo>(&message.payload)) {
+            return encodeSystem(*go, SystemSubcommand::Go);
+        }
+        if (const auto *halt = std::get_if<SystemHalt>(&message.payload)) {
+            return encodeSystem(*halt, SystemSubcommand::Halt);
+        }
+        return Result<CanFrame>::failure(ProtocolError::UnsupportedCommand);
+    }
+
     const auto *trainSpeed = std::get_if<TrainSpeed>(&message.payload);
     if (trainSpeed == nullptr || message.id.command != CanCommand::TrainSpeed) {
         const auto *trainDirection = std::get_if<TrainDirection>(&message.payload);

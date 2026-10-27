@@ -43,7 +43,7 @@ void test_train_speed_decodes_query_length() {
 }
 
 void test_train_speed_rejects_unsupported_command() {
-    const CanId id{0, CanCommand::System, false, 0x0300};
+    const CanId id{0, CanCommand::TrainDiscovery, false, 0x0300};
     CanFrame frame{.identifier = id.encode(), .length = 0};
 
     const auto decoded = CanCodec::decode(frame);
