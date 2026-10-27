@@ -46,6 +46,21 @@ struct SystemTrainCycleStop {
     std::uint32_t locomotiveUid;
 };
 
+struct SystemTrainDataProtocol {
+    std::uint32_t locomotiveUid;
+    std::uint8_t protocol;
+};
+
+struct SystemSwitchingTime {
+    std::uint32_t deviceUid;
+    std::uint16_t time;
+};
+
+struct SystemTrackProtocolActivate {
+    std::uint32_t deviceUid;
+    std::uint8_t protocolMask;
+};
+
 struct UnknownCanMessage {
     CanCommand command;
     std::uint8_t length;

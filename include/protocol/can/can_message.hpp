@@ -10,7 +10,8 @@ namespace can_rail::protocol::can {
 
 using CanPayload =
     std::variant<TrainSpeed, TrainDirection, TrainFunction, SystemStop, SystemGo, SystemHalt,
-                 SystemTrainEmergencyHalt, SystemTrainCycleStop, UnknownCanMessage>;
+                 SystemTrainEmergencyHalt, SystemTrainCycleStop, SystemTrainDataProtocol,
+                 SystemSwitchingTime, SystemTrackProtocolActivate, UnknownCanMessage>;
 
 struct CanMessage {
     CanId id;
