@@ -37,7 +37,7 @@ void test_each_supported_message_is_a_valid_payload() {
     TEST_ASSERT_TRUE(std::holds_alternative<TrainDirection>(
         CanPayload{TrainDirection{0x12345678, Direction::Forward}}));
     TEST_ASSERT_TRUE(
-        std::holds_alternative<TrainFunction>(CanPayload{TrainFunction{0x12345678, 3, true}}));
+        std::holds_alternative<TrainFunction>(CanPayload{TrainFunction{0x12345678, 3, 1}}));
     TEST_ASSERT_TRUE(std::holds_alternative<SystemStop>(CanPayload{SystemStop{0x12345678}}));
     TEST_ASSERT_TRUE(std::holds_alternative<SystemGo>(CanPayload{SystemGo{0x12345678}}));
     TEST_ASSERT_TRUE(std::holds_alternative<SystemHalt>(CanPayload{SystemHalt{0x12345678}}));

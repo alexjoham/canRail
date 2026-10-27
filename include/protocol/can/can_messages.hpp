@@ -23,7 +23,7 @@ struct TrainDirection {
 struct TrainFunction {
     std::uint32_t locomotiveUid;
     std::uint8_t functionNumber;
-    bool enabled;
+    std::uint8_t value;
 };
 
 struct SystemStop {
