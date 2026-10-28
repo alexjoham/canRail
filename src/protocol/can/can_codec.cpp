@@ -18,6 +18,8 @@ constexpr std::uint8_t SystemSwitchingTimeLength = 7;
 constexpr std::uint8_t SystemTrackProtocolActivateLength = 6;
 constexpr std::uint8_t SystemMfxNewRegistrationCounterLength = 7;
 constexpr std::uint8_t SystemOverloadLength = 6;
+constexpr std::uint8_t SystemStatusQueryLength = 6;
+constexpr std::uint8_t SystemStatusResponseLength = 8;
 constexpr std::uint8_t TrainFunctionQueryLength = 5;
 
 Result<CanMessage> decodeTrainSpeed(const CanId &id, const CanFrame &frame) {
@@ -117,6 +119,9 @@ Result<CanMessage> decodeSystemCommand(const CanId &id, const CanFrame &frame) {
             return SystemMfxNewRegistrationCounterLength;
         case SystemSubcommand::Overthrottle:
             return SystemOverloadLength;
+        case SystemSubcommand::Status:
+            return frame.length == SystemStatusResponseLength ? SystemStatusResponseLength
+                                                              : SystemStatusQueryLength;
         default:
             return SystemCommandLength;
         }
@@ -183,6 +188,23 @@ Result<CanMessage> decodeSystemCommand(const CanId &id, const CanFrame &frame) {
         }
         return Result<CanMessage>::success(
             CanMessage{id, SystemOverload{deviceUid.value(), channel.value()}});
+    }
+    case SystemSubcommand::Status: {
+        const auto channel = reader.readU8();
+        if (!channel) {
+            return Result<CanMessage>::failure(ProtocolError::BufferTooShort);
+        }
+        if (frame.length == SystemStatusQueryLength) {
+            return Result<CanMessage>::success(
+                CanMessage{id, SystemStatus{deviceUid.value(), channel.value(), {}}});
+        }
+
+        const auto measurement = reader.readU16BigEndian();
+        if (!measurement) {
+            return Result<CanMessage>::failure(ProtocolError::BufferTooShort);
+        }
+        return Result<CanMessage>::success(
+            CanMessage{id, SystemStatus{deviceUid.value(), channel.value(), measurement.value()}});
     }
     default:
         return Result<CanMessage>::failure(ProtocolError::InvalidEnumValue);
@@ -303,6 +325,23 @@ Result<CanFrame> CanCodec::encode(const CanMessage &message) {
             if (!writer.writeU32BigEndian(overload->deviceUid) ||
                 !writer.writeU8(static_cast<std::uint8_t>(SystemSubcommand::Overthrottle)) ||
                 !writer.writeU8(overload->channel)) {
+                return Result<CanFrame>::failure(ProtocolError::BufferFull);
+            }
+            return Result<CanFrame>::success(frame);
+        }
+        if (const auto *status = std::get_if<SystemStatus>(&message.payload)) {
+            CanFrame frame;
+            frame.identifier = message.id.encode();
+            frame.length = status->measurement.has_value() ? SystemStatusResponseLength
+                                                           : SystemStatusQueryLength;
+            ::can_rail::protocol::ByteWriter writer(frame.data.data(), frame.data.size());
+            if (!writer.writeU32BigEndian(status->deviceUid) ||
+                !writer.writeU8(static_cast<std::uint8_t>(SystemSubcommand::Status)) ||
+                !writer.writeU8(status->channel)) {
+                return Result<CanFrame>::failure(ProtocolError::BufferFull);
+            }
+            if (status->measurement.has_value() &&
+                !writer.writeU16BigEndian(*status->measurement)) {
                 return Result<CanFrame>::failure(ProtocolError::BufferFull);
             }
             return Result<CanFrame>::success(frame);

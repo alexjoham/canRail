@@ -71,6 +71,12 @@ struct SystemOverload {
     std::uint8_t channel;
 };
 
+struct SystemStatus {
+    std::uint32_t deviceUid;
+    std::uint8_t channel;
+    std::optional<std::uint16_t> measurement;
+};
+
 struct UnknownCanMessage {
     CanCommand command;
     std::uint8_t length;
