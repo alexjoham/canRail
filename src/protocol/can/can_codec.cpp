@@ -235,6 +235,32 @@ Result<CanMessage> CanCodec::decode(const CanFrame &frame) {
     if (id.value().command == CanCommand::System) {
         return decodeSystemCommand(id.value(), frame);
     }
+    if (id.value().command == CanCommand::UserPing) {
+        if (frame.length != 5 && frame.length != 8) {
+            return Result<CanMessage>::failure(ProtocolError::InvalidDataLength);
+        }
+
+        ::can_rail::protocol::ByteReader reader(frame.data.data(), frame.length);
+        const auto deviceUid = reader.readU32BigEndian();
+        if (!deviceUid) {
+            return Result<CanMessage>::failure(ProtocolError::BufferTooShort);
+        }
+
+        if (frame.length == 5) {
+            return Result<CanMessage>::success(CanMessage{id.value(), UserPing{deviceUid.value(), {}, false}});
+        }
+
+        std::array<std::uint8_t, 4> versionDb{};
+        for (std::size_t i = 0; i < versionDb.size(); ++i) {
+            const auto byte = reader.readU8();
+            if (!byte) {
+                return Result<CanMessage>::failure(ProtocolError::BufferTooShort);
+            }
+            versionDb[i] = byte.value();
+        }
+
+        return Result<CanMessage>::success(CanMessage{id.value(), UserPing{deviceUid.value(), versionDb, true}});
+    }
 
     return Result<CanMessage>::failure(ProtocolError::UnsupportedCommand);
 }
@@ -347,6 +373,29 @@ Result<CanFrame> CanCodec::encode(const CanMessage &message) {
             return Result<CanFrame>::success(frame);
         }
         return Result<CanFrame>::failure(ProtocolError::UnsupportedCommand);
+    }
+
+    if (message.id.command == CanCommand::UserPing) {
+        const auto *ping = std::get_if<UserPing>(&message.payload);
+        if (ping == nullptr) {
+            return Result<CanFrame>::failure(ProtocolError::UnsupportedCommand);
+        }
+
+        CanFrame frame;
+        frame.identifier = message.id.encode();
+        frame.length = ping->hasVersionDb ? 8 : 5;
+        ::can_rail::protocol::ByteWriter writer(frame.data.data(), frame.data.size());
+        if (!writer.writeU32BigEndian(ping->deviceUid.value_or(0))) {
+            return Result<CanFrame>::failure(ProtocolError::BufferFull);
+        }
+        if (ping->hasVersionDb) {
+            for (const auto byte : ping->versionDb) {
+                if (!writer.writeU8(byte)) {
+                    return Result<CanFrame>::failure(ProtocolError::BufferFull);
+                }
+            }
+        }
+        return Result<CanFrame>::success(frame);
     }
 
     const auto *trainSpeed = std::get_if<TrainSpeed>(&message.payload);

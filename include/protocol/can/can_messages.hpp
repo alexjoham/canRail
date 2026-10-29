@@ -77,6 +77,12 @@ struct SystemStatus {
     std::optional<std::uint16_t> measurement;
 };
 
+struct UserPing {
+    std::optional<std::uint32_t> deviceUid;
+    std::array<std::uint8_t, 4> versionDb{};
+    bool hasVersionDb{false};
+};
+
 struct UnknownCanMessage {
     CanCommand command;
     std::uint8_t length;
