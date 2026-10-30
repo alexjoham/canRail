@@ -83,6 +83,21 @@ struct UserPing {
     bool hasVersionDb{false};
 };
 
+struct StatusDataQuery {
+    std::uint32_t deviceUid;
+    std::uint8_t index;
+};
+
+struct StatusDataStream {
+    std::array<std::uint8_t, 8> data{};
+};
+
+struct StatusDataResponse {
+    std::uint32_t deviceUid;
+    std::uint8_t index;
+    std::uint8_t packetCount;
+};
+
 struct UnknownCanMessage {
     CanCommand command;
     std::uint8_t length;

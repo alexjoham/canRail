@@ -12,7 +12,8 @@ using CanPayload =
     std::variant<TrainSpeed, TrainDirection, TrainFunction, SystemStop, SystemGo, SystemHalt,
                  SystemTrainEmergencyHalt, SystemTrainCycleStop, SystemTrainDataProtocol,
                  SystemSwitchingTime, SystemTrackProtocolActivate, SystemMfxNewRegistrationCounter,
-                 SystemOverload, SystemStatus, UserPing, UnknownCanMessage>;
+                 SystemOverload, SystemStatus, UserPing, StatusDataQuery, StatusDataStream,
+                 StatusDataResponse, UnknownCanMessage>;
 
 struct CanMessage {
     CanId id;
