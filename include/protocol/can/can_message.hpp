@@ -13,7 +13,7 @@ using CanPayload =
                  SystemTrainEmergencyHalt, SystemTrainCycleStop, SystemTrainDataProtocol,
                  SystemSwitchingTime, SystemTrackProtocolActivate, SystemMfxNewRegistrationCounter,
                  SystemOverload, SystemStatus, UserPing, StatusDataQuery, StatusDataStream,
-                 StatusDataResponse, UnknownCanMessage>;
+                 StatusDataResponse, ReadConfigRequest, ReadConfigResponse, UnknownCanMessage>;
 
 struct CanMessage {
     CanId id;

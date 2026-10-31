@@ -98,6 +98,20 @@ struct StatusDataResponse {
     std::uint8_t packetCount;
 };
 
+struct ReadConfigRequest {
+    std::uint32_t locomotiveUid;
+    std::uint8_t cvIndex;
+    std::uint16_t cvNumber;
+    std::uint8_t count;
+};
+
+struct ReadConfigResponse {
+    std::uint32_t locomotiveUid;
+    std::uint8_t cvIndex;
+    std::uint16_t cvNumber;
+    std::optional<std::uint8_t> value;
+};
+
 struct UnknownCanMessage {
     CanCommand command;
     std::uint8_t length;

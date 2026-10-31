@@ -24,6 +24,17 @@ constexpr std::uint8_t TrainFunctionQueryLength = 5;
 constexpr std::uint8_t StatusDataQueryLength = 5;
 constexpr std::uint8_t StatusDataResponseLength = 6;
 constexpr std::uint8_t StatusDataStreamLength = 8;
+constexpr std::uint8_t ReadConfigRequestLength = 7;
+constexpr std::uint8_t ReadConfigMissingValueLength = 6;
+constexpr std::uint8_t ReadConfigResponseLength = 7;
+
+bool isValidReadConfigAddress(std::uint8_t cvIndex, std::uint16_t cvNumber) {
+    return cvIndex <= 63 && cvNumber <= 1023;
+}
+
+std::uint8_t encodeReadConfigAddress(std::uint8_t cvIndex, std::uint16_t cvNumber) {
+    return static_cast<std::uint8_t>((cvIndex << 2) | (cvNumber >> 8));
+}
 
 Result<CanMessage> decodeTrainSpeed(const CanId &id, const CanFrame &frame) {
     if (frame.length != TrainSpeedLength && frame.length != TrainSpeedQueryLength) {
@@ -296,6 +307,45 @@ Result<CanMessage> CanCodec::decode(const CanFrame &frame) {
         return Result<CanMessage>::success(CanMessage{
             id.value(), StatusDataResponse{deviceUid.value(), index.value(), packetCount.value()}});
     }
+    if (id.value().command == CanCommand::ReadConfig) {
+        if (frame.length != ReadConfigMissingValueLength &&
+            frame.length != ReadConfigRequestLength) {
+            return Result<CanMessage>::failure(ProtocolError::InvalidDataLength);
+        }
+
+        ::can_rail::protocol::ByteReader reader(frame.data.data(), frame.length);
+        const auto locomotiveUid = reader.readU32BigEndian();
+        const auto addressHigh = reader.readU8();
+        const auto cvLow = reader.readU8();
+        if (!locomotiveUid || !addressHigh || !cvLow) {
+            return Result<CanMessage>::failure(ProtocolError::BufferTooShort);
+        }
+
+        const auto cvIndex = static_cast<std::uint8_t>(addressHigh.value() >> 2);
+        const auto cvNumber =
+            static_cast<std::uint16_t>(((addressHigh.value() & 0x03U) << 8) | cvLow.value());
+        if (!isValidReadConfigAddress(cvIndex, cvNumber)) {
+            return Result<CanMessage>::failure(ProtocolError::InvalidEnumValue);
+        }
+
+        if (frame.length == ReadConfigMissingValueLength) {
+            return Result<CanMessage>::success(CanMessage{
+                id.value(), ReadConfigResponse{locomotiveUid.value(), cvIndex, cvNumber, {}}});
+        }
+
+        const auto value = reader.readU8();
+        if (!value) {
+            return Result<CanMessage>::failure(ProtocolError::BufferTooShort);
+        }
+        if (id.value().response) {
+            return Result<CanMessage>::success(
+                CanMessage{id.value(), ReadConfigResponse{locomotiveUid.value(), cvIndex, cvNumber,
+                                                          value.value()}});
+        }
+        return Result<CanMessage>::success(
+            CanMessage{id.value(),
+                       ReadConfigRequest{locomotiveUid.value(), cvIndex, cvNumber, value.value()}});
+    }
 
     return Result<CanMessage>::failure(ProtocolError::UnsupportedCommand);
 }
@@ -458,6 +508,44 @@ Result<CanFrame> CanCodec::encode(const CanMessage &message) {
             frame.length = StatusDataResponseLength;
             if (!writer.writeU32BigEndian(response->deviceUid) ||
                 !writer.writeU8(response->index) || !writer.writeU8(response->packetCount)) {
+                return Result<CanFrame>::failure(ProtocolError::BufferFull);
+            }
+            return Result<CanFrame>::success(frame);
+        }
+        return Result<CanFrame>::failure(ProtocolError::UnsupportedCommand);
+    }
+
+    if (message.id.command == CanCommand::ReadConfig) {
+        CanFrame frame;
+        frame.identifier = message.id.encode();
+        ::can_rail::protocol::ByteWriter writer(frame.data.data(), frame.data.size());
+
+        if (const auto *request = std::get_if<ReadConfigRequest>(&message.payload)) {
+            if (!isValidReadConfigAddress(request->cvIndex, request->cvNumber) ||
+                request->count > 63) {
+                return Result<CanFrame>::failure(ProtocolError::InvalidEnumValue);
+            }
+            frame.length = ReadConfigRequestLength;
+            if (!writer.writeU32BigEndian(request->locomotiveUid) ||
+                !writer.writeU8(encodeReadConfigAddress(request->cvIndex, request->cvNumber)) ||
+                !writer.writeU8(static_cast<std::uint8_t>(request->cvNumber & 0xFF)) ||
+                !writer.writeU8(request->count)) {
+                return Result<CanFrame>::failure(ProtocolError::BufferFull);
+            }
+            return Result<CanFrame>::success(frame);
+        }
+        if (const auto *response = std::get_if<ReadConfigResponse>(&message.payload)) {
+            if (!isValidReadConfigAddress(response->cvIndex, response->cvNumber)) {
+                return Result<CanFrame>::failure(ProtocolError::InvalidEnumValue);
+            }
+            frame.length = response->value.has_value() ? ReadConfigResponseLength
+                                                       : ReadConfigMissingValueLength;
+            if (!writer.writeU32BigEndian(response->locomotiveUid) ||
+                !writer.writeU8(encodeReadConfigAddress(response->cvIndex, response->cvNumber)) ||
+                !writer.writeU8(static_cast<std::uint8_t>(response->cvNumber & 0xFF))) {
+                return Result<CanFrame>::failure(ProtocolError::BufferFull);
+            }
+            if (response->value.has_value() && !writer.writeU8(*response->value)) {
                 return Result<CanFrame>::failure(ProtocolError::BufferFull);
             }
             return Result<CanFrame>::success(frame);
