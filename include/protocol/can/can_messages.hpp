@@ -112,6 +112,22 @@ struct ReadConfigResponse {
     std::optional<std::uint8_t> value;
 };
 
+struct WriteConfigRequest {
+    std::uint32_t locomotiveUid;
+    std::uint8_t cvIndex;
+    std::uint16_t cvNumber;
+    std::uint8_t value;
+    std::uint8_t control;
+};
+
+struct WriteConfigResponse {
+    std::uint32_t locomotiveUid;
+    std::uint8_t cvIndex;
+    std::uint16_t cvNumber;
+    std::uint8_t value;
+    std::uint8_t result;
+};
+
 struct UnknownCanMessage {
     CanCommand command;
     std::uint8_t length;
