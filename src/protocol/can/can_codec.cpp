@@ -28,6 +28,8 @@ constexpr std::uint8_t ReadConfigRequestLength = 7;
 constexpr std::uint8_t ReadConfigMissingValueLength = 6;
 constexpr std::uint8_t ReadConfigResponseLength = 7;
 constexpr std::uint8_t WriteConfigLength = 8;
+constexpr std::uint8_t AccessoriesSwitchDefaultLength = 6;
+constexpr std::uint8_t AccessoriesSwitchTimedLength = 8;
 
 bool isValidReadConfigAddress(std::uint8_t cvIndex, std::uint16_t cvNumber) {
     return cvIndex <= 63 && cvNumber <= 1023;
@@ -383,6 +385,37 @@ Result<CanMessage> CanCodec::decode(const CanFrame &frame) {
             CanMessage{id.value(), WriteConfigRequest{locomotiveUid.value(), cvIndex, cvNumber,
                                                       value.value(), flags.value()}});
     }
+    if (id.value().command == CanCommand::AccessoriesSwitch) {
+        if (frame.length != AccessoriesSwitchDefaultLength &&
+            frame.length != AccessoriesSwitchTimedLength) {
+            return Result<CanMessage>::failure(ProtocolError::InvalidDataLength);
+        }
+
+        ::can_rail::protocol::ByteReader reader(frame.data.data(), frame.length);
+        const auto accessoryUid = reader.readU32BigEndian();
+        const auto position = reader.readU8();
+        const auto power = reader.readU8();
+        if (!accessoryUid || !position || !power) {
+            return Result<CanMessage>::failure(ProtocolError::BufferTooShort);
+        }
+        if (power.value() > 31) {
+            return Result<CanMessage>::failure(ProtocolError::InvalidEnumValue);
+        }
+
+        if (frame.length == AccessoriesSwitchDefaultLength) {
+            return Result<CanMessage>::success(CanMessage{
+                id.value(),
+                AccessoriesSwitch{accessoryUid.value(), position.value(), power.value(), {}}});
+        }
+
+        const auto switchingTime = reader.readU16BigEndian();
+        if (!switchingTime) {
+            return Result<CanMessage>::failure(ProtocolError::BufferTooShort);
+        }
+        return Result<CanMessage>::success(
+            CanMessage{id.value(), AccessoriesSwitch{accessoryUid.value(), position.value(),
+                                                     power.value(), switchingTime.value()}});
+    }
 
     return Result<CanMessage>::failure(ProtocolError::UnsupportedCommand);
 }
@@ -628,6 +661,28 @@ Result<CanFrame> CanCodec::encode(const CanMessage &message) {
             return Result<CanFrame>::success(frame);
         }
         return Result<CanFrame>::failure(ProtocolError::UnsupportedCommand);
+    }
+
+    if (message.id.command == CanCommand::AccessoriesSwitch) {
+        const auto *accessory = std::get_if<AccessoriesSwitch>(&message.payload);
+        if (accessory == nullptr || accessory->power > 31) {
+            return Result<CanFrame>::failure(ProtocolError::InvalidEnumValue);
+        }
+
+        CanFrame frame;
+        frame.identifier = message.id.encode();
+        frame.length = accessory->switchingTime.has_value() ? AccessoriesSwitchTimedLength
+                                                            : AccessoriesSwitchDefaultLength;
+        ::can_rail::protocol::ByteWriter writer(frame.data.data(), frame.data.size());
+        if (!writer.writeU32BigEndian(accessory->accessoryUid) ||
+            !writer.writeU8(accessory->position) || !writer.writeU8(accessory->power)) {
+            return Result<CanFrame>::failure(ProtocolError::BufferFull);
+        }
+        if (accessory->switchingTime.has_value() &&
+            !writer.writeU16BigEndian(*accessory->switchingTime)) {
+            return Result<CanFrame>::failure(ProtocolError::BufferFull);
+        }
+        return Result<CanFrame>::success(frame);
     }
 
     const auto *trainSpeed = std::get_if<TrainSpeed>(&message.payload);

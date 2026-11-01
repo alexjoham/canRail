@@ -128,6 +128,13 @@ struct WriteConfigResponse {
     std::uint8_t result;
 };
 
+struct AccessoriesSwitch {
+    std::uint32_t accessoryUid;
+    std::uint8_t position;
+    std::uint8_t power;
+    std::optional<std::uint16_t> switchingTime;
+};
+
 struct UnknownCanMessage {
     CanCommand command;
     std::uint8_t length;
