@@ -30,6 +30,9 @@ constexpr std::uint8_t ReadConfigResponseLength = 7;
 constexpr std::uint8_t WriteConfigLength = 8;
 constexpr std::uint8_t AccessoriesSwitchDefaultLength = 6;
 constexpr std::uint8_t AccessoriesSwitchTimedLength = 8;
+constexpr std::uint8_t LocDiscoveryProtocolLength = 1;
+constexpr std::uint8_t LocDiscoveryAddressLength = 5;
+constexpr std::uint8_t LocDiscoveryAskRatioLength = 6;
 
 bool isValidReadConfigAddress(std::uint8_t cvIndex, std::uint16_t cvNumber) {
     return cvIndex <= 63 && cvNumber <= 1023;
@@ -416,6 +419,53 @@ Result<CanMessage> CanCodec::decode(const CanFrame &frame) {
             CanMessage{id.value(), AccessoriesSwitch{accessoryUid.value(), position.value(),
                                                      power.value(), switchingTime.value()}});
     }
+    if (id.value().command == CanCommand::TrainDiscovery) {
+        if (id.value().response) {
+            if (frame.length != LocDiscoveryAddressLength &&
+                frame.length != LocDiscoveryAskRatioLength) {
+                return Result<CanMessage>::failure(ProtocolError::InvalidDataLength);
+            }
+
+            ::can_rail::protocol::ByteReader reader(frame.data.data(), frame.length);
+            const auto mfxUid = reader.readU32BigEndian();
+            const auto range = reader.readU8();
+            if (!mfxUid || !range) {
+                return Result<CanMessage>::failure(ProtocolError::BufferTooShort);
+            }
+            if (frame.length == LocDiscoveryAddressLength) {
+                return Result<CanMessage>::success(CanMessage{
+                    id.value(), LocDiscoveryResponse{mfxUid.value(), range.value(), {}}});
+            }
+
+            const auto askRatio = reader.readU8();
+            if (!askRatio) {
+                return Result<CanMessage>::failure(ProtocolError::BufferTooShort);
+            }
+            return Result<CanMessage>::success(CanMessage{
+                id.value(), LocDiscoveryResponse{mfxUid.value(), range.value(), askRatio.value()}});
+        }
+
+        if (frame.length != 0 && frame.length != LocDiscoveryProtocolLength &&
+            frame.length != LocDiscoveryAddressLength) {
+            return Result<CanMessage>::failure(ProtocolError::InvalidDataLength);
+        }
+        if (frame.length == 0) {
+            return Result<CanMessage>::success(CanMessage{id.value(), LocDiscoveryRequest{}});
+        }
+        if (frame.length == LocDiscoveryProtocolLength) {
+            return Result<CanMessage>::success(
+                CanMessage{id.value(), LocDiscoveryRequest{frame.data[0], {}, {}}});
+        }
+
+        ::can_rail::protocol::ByteReader reader(frame.data.data(), frame.length);
+        const auto mfxUid = reader.readU32BigEndian();
+        const auto range = reader.readU8();
+        if (!mfxUid || !range) {
+            return Result<CanMessage>::failure(ProtocolError::BufferTooShort);
+        }
+        return Result<CanMessage>::success(
+            CanMessage{id.value(), LocDiscoveryRequest{{}, mfxUid.value(), range.value()}});
+    }
 
     return Result<CanMessage>::failure(ProtocolError::UnsupportedCommand);
 }
@@ -683,6 +733,55 @@ Result<CanFrame> CanCodec::encode(const CanMessage &message) {
             return Result<CanFrame>::failure(ProtocolError::BufferFull);
         }
         return Result<CanFrame>::success(frame);
+    }
+
+    if (message.id.command == CanCommand::TrainDiscovery) {
+        if (const auto *request = std::get_if<LocDiscoveryRequest>(&message.payload)) {
+            if (message.id.response ||
+                (request->protocol.has_value() &&
+                 (request->mfxUid.has_value() || request->range.has_value())) ||
+                (request->mfxUid.has_value() != request->range.has_value())) {
+                return Result<CanFrame>::failure(ProtocolError::InvalidEnumValue);
+            }
+
+            CanFrame frame;
+            frame.identifier = message.id.encode();
+            ::can_rail::protocol::ByteWriter writer(frame.data.data(), frame.data.size());
+            if (request->protocol.has_value()) {
+                frame.length = LocDiscoveryProtocolLength;
+                if (!writer.writeU8(*request->protocol)) {
+                    return Result<CanFrame>::failure(ProtocolError::BufferFull);
+                }
+            } else if (request->mfxUid.has_value()) {
+                frame.length = LocDiscoveryAddressLength;
+                if (!writer.writeU32BigEndian(*request->mfxUid) ||
+                    !writer.writeU8(*request->range)) {
+                    return Result<CanFrame>::failure(ProtocolError::BufferFull);
+                }
+            } else {
+                frame.length = 0;
+            }
+            return Result<CanFrame>::success(frame);
+        }
+
+        if (const auto *response = std::get_if<LocDiscoveryResponse>(&message.payload)) {
+            if (!message.id.response) {
+                return Result<CanFrame>::failure(ProtocolError::InvalidEnumValue);
+            }
+            CanFrame frame;
+            frame.identifier = message.id.encode();
+            frame.length = response->askRatio.has_value() ? LocDiscoveryAskRatioLength
+                                                          : LocDiscoveryAddressLength;
+            ::can_rail::protocol::ByteWriter writer(frame.data.data(), frame.data.size());
+            if (!writer.writeU32BigEndian(response->mfxUid) || !writer.writeU8(response->range)) {
+                return Result<CanFrame>::failure(ProtocolError::BufferFull);
+            }
+            if (response->askRatio.has_value() && !writer.writeU8(*response->askRatio)) {
+                return Result<CanFrame>::failure(ProtocolError::BufferFull);
+            }
+            return Result<CanFrame>::success(frame);
+        }
+        return Result<CanFrame>::failure(ProtocolError::UnsupportedCommand);
     }
 
     const auto *trainSpeed = std::get_if<TrainSpeed>(&message.payload);

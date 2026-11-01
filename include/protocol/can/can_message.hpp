@@ -14,7 +14,8 @@ using CanPayload =
                  SystemSwitchingTime, SystemTrackProtocolActivate, SystemMfxNewRegistrationCounter,
                  SystemOverload, SystemStatus, UserPing, StatusDataQuery, StatusDataStream,
                  StatusDataResponse, ReadConfigRequest, ReadConfigResponse, WriteConfigRequest,
-                 WriteConfigResponse, AccessoriesSwitch, UnknownCanMessage>;
+                 WriteConfigResponse, AccessoriesSwitch, LocDiscoveryRequest, LocDiscoveryResponse,
+                 UnknownCanMessage>;
 
 struct CanMessage {
     CanId id;

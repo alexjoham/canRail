@@ -135,6 +135,18 @@ struct AccessoriesSwitch {
     std::optional<std::uint16_t> switchingTime;
 };
 
+struct LocDiscoveryRequest {
+    std::optional<std::uint8_t> protocol;
+    std::optional<std::uint32_t> mfxUid;
+    std::optional<std::uint8_t> range;
+};
+
+struct LocDiscoveryResponse {
+    std::uint32_t mfxUid;
+    std::uint8_t range;
+    std::optional<std::uint8_t> askRatio;
+};
+
 struct UnknownCanMessage {
     CanCommand command;
     std::uint8_t length;
