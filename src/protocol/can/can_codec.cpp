@@ -33,6 +33,7 @@ constexpr std::uint8_t AccessoriesSwitchTimedLength = 8;
 constexpr std::uint8_t LocDiscoveryProtocolLength = 1;
 constexpr std::uint8_t LocDiscoveryAddressLength = 5;
 constexpr std::uint8_t LocDiscoveryAskRatioLength = 6;
+constexpr std::uint8_t MfxBindLength = 6;
 
 bool isValidReadConfigAddress(std::uint8_t cvIndex, std::uint16_t cvNumber) {
     return cvIndex <= 63 && cvNumber <= 1023;
@@ -466,6 +467,20 @@ Result<CanMessage> CanCodec::decode(const CanFrame &frame) {
         return Result<CanMessage>::success(
             CanMessage{id.value(), LocDiscoveryRequest{{}, mfxUid.value(), range.value()}});
     }
+    if (id.value().command == CanCommand::MfxBind) {
+        if (frame.length != MfxBindLength) {
+            return Result<CanMessage>::failure(ProtocolError::InvalidDataLength);
+        }
+
+        ::can_rail::protocol::ByteReader reader(frame.data.data(), frame.length);
+        const auto mfxUid = reader.readU32BigEndian();
+        const auto mfxSid = reader.readU16BigEndian();
+        if (!mfxUid || !mfxSid) {
+            return Result<CanMessage>::failure(ProtocolError::BufferTooShort);
+        }
+        return Result<CanMessage>::success(
+            CanMessage{id.value(), MfxBind{mfxUid.value(), mfxSid.value()}});
+    }
 
     return Result<CanMessage>::failure(ProtocolError::UnsupportedCommand);
 }
@@ -782,6 +797,22 @@ Result<CanFrame> CanCodec::encode(const CanMessage &message) {
             return Result<CanFrame>::success(frame);
         }
         return Result<CanFrame>::failure(ProtocolError::UnsupportedCommand);
+    }
+
+    if (message.id.command == CanCommand::MfxBind) {
+        const auto *bind = std::get_if<MfxBind>(&message.payload);
+        if (bind == nullptr) {
+            return Result<CanFrame>::failure(ProtocolError::UnsupportedCommand);
+        }
+
+        CanFrame frame;
+        frame.identifier = message.id.encode();
+        frame.length = MfxBindLength;
+        ::can_rail::protocol::ByteWriter writer(frame.data.data(), frame.data.size());
+        if (!writer.writeU32BigEndian(bind->mfxUid) || !writer.writeU16BigEndian(bind->mfxSid)) {
+            return Result<CanFrame>::failure(ProtocolError::BufferFull);
+        }
+        return Result<CanFrame>::success(frame);
     }
 
     const auto *trainSpeed = std::get_if<TrainSpeed>(&message.payload);

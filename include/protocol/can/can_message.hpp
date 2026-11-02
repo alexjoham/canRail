@@ -15,7 +15,7 @@ using CanPayload =
                  SystemOverload, SystemStatus, UserPing, StatusDataQuery, StatusDataStream,
                  StatusDataResponse, ReadConfigRequest, ReadConfigResponse, WriteConfigRequest,
                  WriteConfigResponse, AccessoriesSwitch, LocDiscoveryRequest, LocDiscoveryResponse,
-                 UnknownCanMessage>;
+                 MfxBind, UnknownCanMessage>;
 
 struct CanMessage {
     CanId id;

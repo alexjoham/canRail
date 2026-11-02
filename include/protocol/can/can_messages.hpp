@@ -147,6 +147,11 @@ struct LocDiscoveryResponse {
     std::optional<std::uint8_t> askRatio;
 };
 
+struct MfxBind {
+    std::uint32_t mfxUid;
+    std::uint16_t mfxSid;
+};
+
 struct UnknownCanMessage {
     CanCommand command;
     std::uint8_t length;
